@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "description": "Audit log schema for transfer flows. All log lines include tx_id (masked if necessary), event, status, account (hashed), amount (optional), and timestamps.",
+  "fields": {
+    "timestamp": {"type": "string", "format": "date-time"},
+    "tx_id": {"type": "string", "desc": "Universally unique transaction id. Recommended: UUID v4.", "sensitive": false},
+    "event": {"type": "string", "examples": ["transfer.initiated", "transfer.debit_committed", "transfer.credit_committed", "transfer.credit_transient_failure", "transfer.credit_unresolved_rollback", "ledger.rollback"]},
+    "status": {"type": "string", "examples": ["initiated", "committed", "failed", "rolled_back"]},
+    "phase": {"type": "string", "examples": ["debit", "credit", "rollback"]},
+    "account": {"type": "string", "desc": "Hashed or masked account reference — do not log PAN or full nsns.", "examples": ["sha256:..."], "sensitive": true},
+    "amount": {"type": "number"},
+    "message": {"type": "string"}
+  },
+  "example_lines": [
+    "{\"timestamp\": \"2025-11-26T12:00:00Z\", \"tx_id\": \"123e4567-e89b-12d3-a456-426614174000\", \"event\": \"transfer.initiated\", \"phase\": \"init\", \"amount\": 100}",
+    "{\"timestamp\": \"2025-11-26T12:00:01Z\", \"tx_id\": \"123e4567-e89b-12d3-a456-426614174000\", \"event\": \"transfer.debit_committed\", \"phase\": \"debit\", \"account\": \"sha256:abcd..\", \"amount\": 100}",
+    "{\"timestamp\": \"2025-11-26T12:00:02Z\", \"tx_id\": \"123e4567-e89b-12d3-a456-426614174000\", \"event\": \"transfer.credit_committed\", \"phase\": \"credit\", \"account\": \"sha256:efgh..\", \"amount\": 100}"
+  ]
+}
