@@ -1,0 +1,27 @@
+{
+  "category": "Bug-related",
+  "subCategory": "Functional bug",
+  "projectContext": {
+    "name": "Mobile Banking Transfer Module",
+    "description": "Transfer module on the bank website: after the user enters the recipient account number and amount on the transfer page and clicks \"Confirm Transfer\", the front end and API return \"Transfer Successful\" while the backend never executes debit or credit operations, leaving both the sender's balance and the recipient's account unchanged.",
+    "currentVersion": "The production version currently has a defect where some transfer requests are marked as successful in the service chain but never posted, and the flow lacks comprehensive consistency checks and failure compensation mechanisms.",
+    "targetVersion": "Fixed_Transfer_Flow_v2 (resolve the mismatch between the displayed success status and the real debit/credit outcome, and add audit and reconciliation capabilities)"
+  },
+  "issueStatement": "When a user initiates a transfer on the site and receives a \"Transfer Successful\" prompt, the backend still does not complete the debit and credit, so users perceive success while funds never move; this is a critical functional defect. Identify the component causing the inconsistent state (e.g., asynchronous ledger failure not propagated, state machine skipping a transition, exceptions not rolled back) and provide a verifiable fix plan.",
+  "businessGoals": [
+    "Guarantee that any transaction shown as \"Transfer Successful\" is genuinely debited and credited in the core ledger; otherwise the front end must show a failed or in-progress status to eliminate false success messages.",
+    "Complete the transfer flow state chain (initiated, processing, successful, failed) and provide traceable audit logs and reconciliation tools during exceptions so customer service and operations teams can investigate quickly.",
+    "Reduce user complaints and financial risk caused by the functional defect, increasing the mobile banking transfer feature's reliability and customer trust."
+  ],
+  "technicalConstraints": {
+    "language": "Python 3.x",
+    "stack": [
+      "The frontend may receive a success acknowledgement before the backend ledger actually posts the transaction.",
+      "During analysis and fix design, avoid direct operations on the real core ledger; reproduce the request chain and boundary conditions via mock services or simulated ledgers in a local or test environment."
+    ]
+  },
+  "nonFunctional": [
+    "Design repeatable integration test scenarios for the fixed transfer flow (including successful posting, ledger failure, and network retry) and execute them via a single script to validate correctness; provide five test cases.",
+    "Emit structured logs with unique transaction identifiers for key steps to support reconciliation and investigation while avoiding sensitive data exposure (e.g., full card numbers)."
+  ]
+}

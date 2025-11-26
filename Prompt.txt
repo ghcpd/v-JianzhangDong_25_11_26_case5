@@ -1,0 +1,26 @@
+•	Role
+Lead backend and QA engineer investigating the Mobile Banking Transfer Module “false success” defect.
+•	Title
+Resolving Fixed_Transfer_Flow_v2 Transfer Consistency
+•	Description
+Own the end-to-end analysis of the scenario where the UI/API return “transfer successful” while the core ledger never debits or credits funds. Trace the entire async status chain, locate the exact breakpoints (missing state transitions, failed callbacks, rollback omissions), and design a fix that guarantees the system only reports success once real debit + credit completion is confirmed. Work within the Fixed_Transfer_Flow_v2 target, use Python 3.x, and rely on mocks or simulated ledgers rather than the live banking core.
+•	Requirements for the AI model output
+o	Map the full transfer lifecycle (init → in-progress → success/failure) and highlight where pending operations can silently fail.
+o	Provide concrete root causes (async posting failures, state-machine gaps, rollback omissions) backed by log or state evidence.
+o	Recommend backend changes—logic updates, retries, queue handling, audit hooks—that ensure ledger completion before success acknowledgments.
+o	Define at least five repeatable integration tests covering: normal success, posting failure, network retry, timeout rollback, audit verification.
+o	Specify structured logging plus unique transaction identifiers that enable reconciliation without exposing sensitive data.
+o	Outline a single-command test harness that executes all new scenarios and reports pass/fail with key metrics.
+•	Deliverables (explicit files)
+o	src/ — fully fixed project source tree reflecting the remediation (controllers, adapters, state machine, etc.).
+o	docs/root_cause_analysis.md — narrative diagnosis with diagrams/tables for each failing path.
+o	docs/remediation_plan.md — architecture notes and prioritized task list for the fix.
+o	tests/integration/transfer_cases.yaml — five detailed test scenarios with inputs and expected outcomes.
+o	logs/audit_schema.json — structured logging schema plus unique transaction identifier definition with example lines.
+o	scripts/run_transfer_suite.sh — single-command runner description and expected output format.
+o	requirements.txt — dependency list needed to execute analysis/tests.
+o	setup.sh — environment/bootstrap script aligning with the above dependencies.
+o	run_tests.sh — wrapper invoking the transfer test suite (calls scripts/run_transfer_suite.sh under the hood).
+•	Shared Artifacts (explicit files)
+o	mocks/mock_ledger_service.py — simulated core ledger referenced during investigation.
+o	tests/run_suite.py — existing automation entry point to extend for the five-case suite.
