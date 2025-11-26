@@ -1,0 +1,4 @@
+structlog>=24.0.0
+PyYAML>=6.0
+rich>=13.7.0
+pytest>=7.0.0
