@@ -1,0 +1,94 @@
+- id: normal_success
+  description: Normal transfer completes debit and credit
+  request:
+    source_account: "12345678"
+    destination_account: "87654321"
+    amount: 100.0
+    currency: "USD"
+  ledger_config:
+    debit:
+      post_results: ["PENDING"]
+      poll_results: ["PENDING", "COMPLETED"]
+    credit:
+      post_results: ["PENDING"]
+      poll_results: ["PENDING", "COMPLETED"]
+  expected:
+    outcome: SUCCESS
+    final_state: COMPLETED
+
+- id: debit_post_failure
+  description: Debit posting fails immediately
+  request:
+    source_account: "22223333"
+    destination_account: "99998888"
+    amount: 50.0
+    currency: "USD"
+  ledger_config:
+    debit:
+      post_results: [{error: "simulated debit post failure"}]
+  expected:
+    outcome: FAILURE
+    final_state: FAILED
+    error_contains: "debit"
+
+- id: network_retry_then_success
+  description: Network failure on first debit post, succeeds on retry
+  request:
+    source_account: "33112233"
+    destination_account: "44445555"
+    amount: 75.5
+    currency: "USD"
+  ledger_config:
+    debit:
+      post_results: [{error: "network"}, "PENDING"]
+      poll_results: ["COMPLETED"]
+    credit:
+      post_results: ["PENDING"]
+      poll_results: ["COMPLETED"]
+  expected:
+    outcome: SUCCESS
+    final_state: COMPLETED
+
+- id: credit_timeout_with_rollback
+  description: Credit poll never completes; debit is rolled back
+  request:
+    source_account: "55667788"
+    destination_account: "88990011"
+    amount: 20.0
+    currency: "USD"
+  ledger_config:
+    debit:
+      post_results: ["PENDING"]
+      poll_results: ["COMPLETED"]
+    credit:
+      post_results: ["PENDING"]
+      poll_results: ["PENDING", "TIMEOUT", "TIMEOUT"]
+    rollback:
+      post_results: ["PENDING"]
+      poll_results: ["COMPLETED"]
+  expected:
+    outcome: FAILURE
+    final_state: ROLLED_BACK
+
+- id: audit_verification
+  description: Audit trail includes all states and masked accounts
+  request:
+    source_account: "12340000"
+    destination_account: "00004321"
+    amount: 10.0
+    currency: "USD"
+  ledger_config:
+    debit:
+      post_results: ["PENDING"]
+      poll_results: ["COMPLETED"]
+    credit:
+      post_results: ["PENDING"]
+      poll_results: ["COMPLETED"]
+  expected:
+    outcome: SUCCESS
+    final_state: COMPLETED
+    audit_events:
+      - DEBIT_POSTED
+      - DEBIT_CONFIRMED
+      - CREDIT_POSTED
+      - CREDIT_CONFIRMED

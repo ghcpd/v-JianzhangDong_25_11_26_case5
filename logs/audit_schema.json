@@ -1,0 +1,54 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Transfer Audit Log Schema",
+  "type": "object",
+  "properties": {
+    "timestamp": { "type": "string", "format": "date-time" },
+    "level": { "type": "string", "enum": ["info", "warning", "error"] },
+    "event": { "type": "string" },
+    "txn_id": { "type": "string", "description": "Unique transfer identifier (UUID)" },
+    "correlation_id": { "type": "string", "description": "Ledger correlation/job identifier" },
+    "state": { "type": "string", "enum": [
+      "INIT", "DEBIT_PENDING", "DEBIT_CONFIRMED", "CREDIT_PENDING", "COMPLETED", "FAILED", "ROLLED_BACK"
+    ] },
+    "source_account": { "type": "string", "description": "Masked source account (e.g., 12****78)" },
+    "destination_account": { "type": "string", "description": "Masked destination account" },
+    "amount": { "type": "number" },
+    "currency": { "type": "string" },
+    "job_id": { "type": "string" },
+    "attempt": { "type": "integer", "minimum": 1 },
+    "status": { "type": "string", "enum": ["PENDING", "COMPLETED", "FAILED", "TIMEOUT"] },
+    "error": { "type": "string" },
+    "rollback_successful": { "type": "boolean" },
+    "rollback_error": { "type": "string" },
+    "extra": { "type": "object", "additionalProperties": true }
+  },
+  "required": ["timestamp", "level", "event", "txn_id"],
+  "additionalProperties": true,
+  "examples": [
+    {
+      "timestamp": "2025-11-26T12:00:00.123Z",
+      "level": "info",
+      "event": "DEBIT_POSTED",
+      "txn_id": "f8a0dcd4-9fde-44a2-aad1-cf10fbf4d1c5",
+      "correlation_id": "corr-debit-1-1",
+      "state": "DEBIT_PENDING",
+      "source_account": "12****78",
+      "destination_account": "87****21",
+      "amount": 100.0,
+      "currency": "USD",
+      "job_id": "debit-1",
+      "status": "PENDING"
+    },
+    {
+      "timestamp": "2025-11-26T12:00:01.500Z",
+      "level": "info",
+      "event": "CREDIT_CONFIRM_FAILED",
+      "txn_id": "f8a0dcd4-9fde-44a2-aad1-cf10fbf4d1c5",
+      "state": "ROLLED_BACK",
+      "job_id": "credit-2",
+      "status": "TIMEOUT",
+      "rollback_successful": true
+    }
+  ]
+}
