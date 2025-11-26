@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Transfer Audit Log",
+  "type": "object",
+  "properties": {
+    "ts": {"type": "string", "format": "date-time"},
+    "tx_id": {"type": "string", "description": "unique transaction UUID; safe to store and search"},
+    "event": {"type": "string", "description": "event type e.g. initiated, debit_attempt, credit_attempt, rollback_attempt, completed, failed"},
+    "state": {"type": "string"},
+    "account_ref": {"type": "string", "description": "short non-sensitive account reference (last 4 digits or masked id)"},
+    "amount": {"type": "number"},
+    "result": {"type": "string"},
+    "error": {"type": ["string", "null"]},
+    "retry_attempt": {"type": ["integer", "null"]}
+  },
+  "required": ["ts", "tx_id", "event", "state"]
+}
+
+/* Example log lines (do not include full sensitive data):
+{ "ts": "2025-11-26T12:34:56Z", "tx_id": "abcd-1234-...", "event": "initiated", "state": "initiated", "account_ref": "acct-A-xxxx", "amount": 100.0 }
+{ "ts": "2025-11-26T12:34:56Z", "tx_id": "abcd-1234-...", "event": "debit_attempt", "state": "debit_posted", "result": "ok", "retry_attempt": 1 }
+{ "ts": "2025-11-26T12:35:01Z", "tx_id": "abcd-1234-...", "event": "credit_attempt", "state": "credit_posted", "result": "error", "error": "timeout" }
+*/

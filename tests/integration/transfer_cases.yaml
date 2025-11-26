@@ -1,0 +1,43 @@
+---
+- name: normal_success
+  description: both debit and credit succeed on first attempt
+  scenario:
+    debit: ok
+    credit: ok
+  expect:
+    final_state: completed
+
+- name: debit_failure
+  description: debit permanently rejected by ledger
+  scenario:
+    debit: fail
+    credit: ok
+  expect:
+    final_state: failed
+    failure_contains: debit
+
+- name: transient_debit_then_success
+  description: debit returns a transient error first, then succeeds on retry
+  scenario:
+    debit: retry_once
+    credit: ok
+  expect:
+    final_state: completed
+
+- name: credit_failure_requires_rollback
+  description: debit succeeds, credit fails -> rollback attempted
+  scenario:
+    debit: ok
+    credit: fail
+  expect:
+    final_state: failed
+    failure_contains: credit
+
+- name: credit_timeout_then_retry_audit
+  description: credit times out initially and should fail after retries; audit logs must include tx_id
+  scenario:
+    debit: ok
+    credit: timeout
+  expect:
+    final_state: failed
+    verify_audit: true
