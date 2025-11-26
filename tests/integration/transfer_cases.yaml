@@ -1,0 +1,503 @@
+# Transfer Integration Test Cases
+# Five comprehensive test scenarios for the Fixed_Transfer_Flow_v2
+
+test_cases:
+  - id: TC-001
+    name: "Normal Success Path - Complete Transfer"
+    description: "Verify successful end-to-end transfer with both debit and credit operations completing successfully"
+    priority: P0
+    category: happy_path
+    
+    preconditions:
+      - Source account exists with sufficient balance
+      - Destination account is valid and active
+      - Ledger service is operational
+      
+    test_data:
+      source_account: "ACC-SOURCE-001"
+      destination_account: "ACC-DEST-001"
+      amount: 100.00
+      currency: "USD"
+      initial_source_balance: 1000.00
+      initial_dest_balance: 500.00
+      
+    setup:
+      - Create mock ledger service with no failure modes
+      - Set source account balance to 1000.00
+      - Set destination account balance to 500.00
+      
+    steps:
+      - step: 1
+        action: "Initiate transfer request"
+        expected: "Transfer created in INITIATED state"
+        verify:
+          - "transfer.state == INITIATED"
+          - "transfer.transaction_id is not None"
+          - "Audit log: transfer_initiated event"
+          
+      - step: 2
+        action: "Execute transfer"
+        expected: "Transfer progresses through all states"
+        verify:
+          - "transfer.state transitions: INITIATED → VALIDATING → PENDING"
+          - "Audit log: state_transition events"
+          
+      - step: 3
+        action: "Debit operation executes"
+        expected: "Debit completes successfully"
+        verify:
+          - "transfer.state == DEBIT_COMPLETED"
+          - "transfer.debit_completed_at is not None"
+          - "transfer.ledger_debit_ref starts with 'DR-'"
+          - "Source account balance == 900.00"
+          - "Audit log: ledger_operation event (debit, success)"
+          
+      - step: 4
+        action: "Credit operation executes"
+        expected: "Credit completes successfully"
+        verify:
+          - "transfer.state == CREDIT_PROCESSING"
+          - "transfer.credit_completed_at is not None"
+          - "transfer.ledger_credit_ref starts with 'CR-'"
+          - "Destination account balance == 600.00"
+          - "Audit log: ledger_operation event (credit, success)"
+          
+      - step: 5
+        action: "Transfer marked as completed"
+        expected: "Transfer in COMPLETED state"
+        verify:
+          - "transfer.state == COMPLETED"
+          - "transfer.completed_at is not None"
+          - "transfer.is_success() == True"
+          - "API response: status='success'"
+          - "Audit log: transfer_completed event"
+          
+    expected_final_state:
+      transfer_state: "COMPLETED"
+      source_balance: 900.00
+      dest_balance: 600.00
+      error_code: null
+      
+    audit_log_verification:
+      required_events:
+        - "transfer_initiated"
+        - "state_transition (INITIATED → VALIDATING)"
+        - "state_transition (VALIDATING → PENDING)"
+        - "state_transition (PENDING → DEBIT_PROCESSING)"
+        - "ledger_operation (debit, success)"
+        - "state_transition (DEBIT_PROCESSING → DEBIT_COMPLETED)"
+        - "state_transition (DEBIT_COMPLETED → CREDIT_PROCESSING)"
+        - "ledger_operation (credit, success)"
+        - "state_transition (CREDIT_PROCESSING → COMPLETED)"
+        - "transfer_completed"
+        
+    success_criteria:
+      - "Transfer marked as COMPLETED"
+      - "Both accounts updated correctly"
+      - "Complete audit trail present"
+      - "No errors logged"
+      - "API returns success status"
+
+  # ============================================================================
+
+  - id: TC-002
+    name: "Credit Failure with Automatic Rollback"
+    description: "Verify automatic rollback when credit operation fails after successful debit"
+    priority: P0
+    category: failure_handling
+    
+    preconditions:
+      - Source account exists with sufficient balance
+      - Mock ledger configured to fail credit operation
+      
+    test_data:
+      source_account: "ACC-SOURCE-002"
+      destination_account: "ACC-DEST-CLOSED"
+      amount: 150.00
+      currency: "USD"
+      initial_source_balance: 1000.00
+      initial_dest_balance: 500.00
+      
+    setup:
+      - Create mock ledger service with failure_mode='credit_fail'
+      - Set source account balance to 1000.00
+      - Set destination account balance to 500.00
+      
+    steps:
+      - step: 1
+        action: "Initiate and execute transfer"
+        expected: "Transfer starts processing"
+        
+      - step: 2
+        action: "Debit operation executes"
+        expected: "Debit succeeds, source account debited"
+        verify:
+          - "transfer.state == DEBIT_COMPLETED"
+          - "Source account balance == 850.00"
+          - "Audit log: ledger_operation (debit, success)"
+          
+      - step: 3
+        action: "Credit operation executes"
+        expected: "Credit fails with error"
+        verify:
+          - "transfer.state == CREDIT_PROCESSING"
+          - "Credit operation returns FAILED status"
+          - "Destination account balance unchanged == 500.00"
+          - "Audit log: ledger_operation (credit, failed)"
+          
+      - step: 4
+        action: "Automatic rollback triggered"
+        expected: "Rollback debit operation"
+        verify:
+          - "transfer.state == ROLLING_BACK"
+          - "Rollback method called"
+          - "Audit log: transfer_rollback event"
+          
+      - step: 5
+        action: "Rollback completes"
+        expected: "Source account balance restored"
+        verify:
+          - "transfer.state == FAILED"
+          - "Source account balance == 1000.00 (restored)"
+          - "Destination account balance == 500.00 (unchanged)"
+          - "transfer.error_code == CREDIT_FAILED"
+          - "API response: status='failed'"
+          - "Audit log: transfer_failed event"
+          
+    expected_final_state:
+      transfer_state: "FAILED"
+      source_balance: 1000.00  # Restored after rollback
+      dest_balance: 500.00     # Never changed
+      error_code: "CREDIT_FAILED"
+      
+    audit_log_verification:
+      required_events:
+        - "transfer_initiated"
+        - "ledger_operation (debit, success)"
+        - "ledger_operation (credit, failed)"
+        - "transfer_rollback"
+        - "transfer_failed"
+        
+    success_criteria:
+      - "Rollback executed automatically"
+      - "Source account balance restored"
+      - "Transfer marked as FAILED"
+      - "Error code set correctly"
+      - "Complete audit trail with rollback"
+      - "API returns failed status"
+
+  # ============================================================================
+
+  - id: TC-003
+    name: "Network Timeout with Retry and Rollback"
+    description: "Verify timeout handling and rollback when ledger operations exceed timeout threshold"
+    priority: P0
+    category: resilience
+    
+    preconditions:
+      - Mock ledger configured with timeout simulation
+      - Timeout threshold set to 3 seconds
+      
+    test_data:
+      source_account: "ACC-SOURCE-003"
+      destination_account: "ACC-DEST-003"
+      amount: 200.00
+      currency: "USD"
+      initial_source_balance: 1000.00
+      initial_dest_balance: 500.00
+      
+    setup:
+      - Create mock ledger service with failure_mode='timeout'
+      - Set source account balance to 1000.00
+      - Set timeout threshold to 3 seconds
+      
+    steps:
+      - step: 1
+        action: "Initiate transfer"
+        expected: "Transfer initiated successfully"
+        
+      - step: 2
+        action: "Debit operation times out"
+        expected: "Timeout detected during debit"
+        verify:
+          - "Debit operation exceeds timeout threshold"
+          - "transfer.state transitions to TIMEOUT"
+          - "Audit log: ledger_operation (debit, timeout)"
+          
+      - step: 3
+        action: "Timeout handling triggers"
+        expected: "Transfer marked as timeout"
+        verify:
+          - "transfer.state == TIMEOUT"
+          - "transfer.error_code == TIMEOUT_ERROR"
+          - "No partial operations committed"
+          
+      - step: 4
+        action: "Rollback initiated (if partial operation)"
+        expected: "Clean up any partial state"
+        verify:
+          - "Rollback called if debit was partially committed"
+          - "Account balances remain unchanged"
+          
+      - step: 5
+        action: "Transfer finalized as failed"
+        expected: "Transfer in terminal failure state"
+        verify:
+          - "transfer.state == FAILED"
+          - "transfer.error_message contains 'timeout'"
+          - "Source balance == 1000.00"
+          - "API response: status='failed', error_code='TIMEOUT_ERROR'"
+          
+    expected_final_state:
+      transfer_state: "FAILED"
+      source_balance: 1000.00
+      dest_balance: 500.00
+      error_code: "TIMEOUT_ERROR"
+      
+    audit_log_verification:
+      required_events:
+        - "transfer_initiated"
+        - "ledger_operation (debit, timeout)"
+        - "state_transition (* → TIMEOUT)"
+        - "transfer_failed"
+        
+    success_criteria:
+      - "Timeout detected and handled"
+      - "No partial operations committed"
+      - "Transfer marked as FAILED"
+      - "Error code indicates timeout"
+      - "Audit trail shows timeout event"
+
+  # ============================================================================
+
+  - id: TC-004
+    name: "Debit Failure - No Rollback Needed"
+    description: "Verify proper handling when debit operation fails (no rollback needed)"
+    priority: P1
+    category: failure_handling
+    
+    preconditions:
+      - Source account has insufficient funds
+      - Mock ledger configured to fail debit
+      
+    test_data:
+      source_account: "ACC-SOURCE-INSUFFICIENT"
+      destination_account: "ACC-DEST-004"
+      amount: 5000.00
+      currency: "USD"
+      initial_source_balance: 100.00  # Insufficient
+      initial_dest_balance: 500.00
+      
+    setup:
+      - Create mock ledger service with failure_mode='debit_fail'
+      - Set source account balance to 100.00
+      
+    steps:
+      - step: 1
+        action: "Initiate transfer"
+        expected: "Transfer created"
+        
+      - step: 2
+        action: "Validation passes"
+        expected: "Amount and accounts validated"
+        verify:
+          - "transfer.state == PENDING"
+          
+      - step: 3
+        action: "Debit operation fails"
+        expected: "Debit fails due to insufficient funds"
+        verify:
+          - "Debit operation returns FAILED status"
+          - "transfer.state == FAILED"
+          - "transfer.error_code == DEBIT_FAILED"
+          - "Error message contains 'Insufficient funds' or 'account locked'"
+          - "Audit log: ledger_operation (debit, failed)"
+          
+      - step: 4
+        action: "No rollback needed"
+        expected: "Transfer marked as failed without rollback"
+        verify:
+          - "Rollback method NOT called (debit never succeeded)"
+          - "Source balance unchanged == 100.00"
+          - "Destination balance unchanged == 500.00"
+          - "API response: status='failed'"
+          
+    expected_final_state:
+      transfer_state: "FAILED"
+      source_balance: 100.00
+      dest_balance: 500.00
+      error_code: "DEBIT_FAILED"
+      
+    audit_log_verification:
+      required_events:
+        - "transfer_initiated"
+        - "state_transition (INITIATED → VALIDATING → PENDING)"
+        - "state_transition (PENDING → DEBIT_PROCESSING)"
+        - "ledger_operation (debit, failed)"
+        - "state_transition (DEBIT_PROCESSING → FAILED)"
+        - "transfer_failed"
+      must_not_contain:
+        - "transfer_rollback"
+        
+    success_criteria:
+      - "Debit failure detected"
+      - "No rollback attempted"
+      - "Transfer marked as FAILED"
+      - "No account balance changes"
+      - "Proper error code and message"
+
+  # ============================================================================
+
+  - id: TC-005
+    name: "Complete Audit Trail Verification"
+    description: "Verify comprehensive audit logging across the entire transfer lifecycle"
+    priority: P0
+    category: observability
+    
+    preconditions:
+      - Audit logger configured with structured JSON output
+      - All log levels enabled
+      
+    test_data:
+      source_account: "ACC-SOURCE-005"
+      destination_account: "ACC-DEST-005"
+      amount: 250.00
+      currency: "USD"
+      initial_source_balance: 1000.00
+      initial_dest_balance: 500.00
+      
+    setup:
+      - Create mock ledger service (normal operation)
+      - Configure audit logger with JSON output
+      - Set source and destination balances
+      
+    steps:
+      - step: 1
+        action: "Execute complete successful transfer"
+        expected: "Transfer completes successfully"
+        
+      - step: 2
+        action: "Verify audit log structure"
+        expected: "All logs follow structured schema"
+        verify:
+          - "All log entries are valid JSON"
+          - "All entries have 'timestamp' field (ISO 8601)"
+          - "All entries have 'event' field"
+          - "All entries have 'transaction_id' field"
+          - "All entries have 'level' field (INFO/WARNING/ERROR)"
+          
+      - step: 3
+        action: "Verify sensitive data masking"
+        expected: "Account numbers masked properly"
+        verify:
+          - "Source account in logs shows only last 4 digits (e.g., ****0005)"
+          - "Destination account in logs shows only last 4 digits"
+          - "No full account numbers in logs"
+          
+      - step: 4
+        action: "Verify transaction ID consistency"
+        expected: "Same transaction ID across all log entries"
+        verify:
+          - "Transaction ID format: TXN-[12 alphanumeric chars]"
+          - "All log entries for this transfer have same transaction_id"
+          - "Transaction ID unique across transfers"
+          
+      - step: 5
+        action: "Verify complete event sequence"
+        expected: "All lifecycle events logged in order"
+        verify:
+          - "Event sequence is chronological (timestamps ascending)"
+          - "State transitions logged with from_state and to_state"
+          - "Ledger operations logged with operation type and status"
+          - "Duration/latency metrics included in completion event"
+          
+      - step: 6
+        action: "Verify error context in logs"
+        expected: "Sufficient context for troubleshooting"
+        verify:
+          - "Each log entry has contextual fields (amount, currency, etc.)"
+          - "State transition logs include 'reason' field"
+          - "Error logs include 'error_code' and 'error_message'"
+          
+    expected_log_structure:
+      transfer_initiated:
+        required_fields:
+          - "timestamp"
+          - "event: transfer_initiated"
+          - "transaction_id"
+          - "source_account (masked)"
+          - "destination_account (masked)"
+          - "amount"
+          - "currency"
+          
+      state_transition:
+        required_fields:
+          - "timestamp"
+          - "event: state_transition"
+          - "transaction_id"
+          - "from_state"
+          - "to_state"
+          - "reason"
+          
+      ledger_operation:
+        required_fields:
+          - "timestamp"
+          - "event: ledger_operation"
+          - "transaction_id"
+          - "operation (debit|credit|rollback)"
+          - "account (masked)"
+          - "amount"
+          - "status (success|failed)"
+          - "error (if failed)"
+          
+      transfer_completed:
+        required_fields:
+          - "timestamp"
+          - "event: transfer_completed"
+          - "transaction_id"
+          - "duration_ms"
+          
+    success_criteria:
+      - "100% of transfers have complete audit logs"
+      - "All log entries follow defined schema"
+      - "Sensitive data properly masked"
+      - "Transaction IDs unique and consistent"
+      - "Logs enable full transaction reconstruction"
+      - "No PII exposed in logs"
+      - "Logs queryable by transaction_id"
+
+# ============================================================================
+# Test Execution Configuration
+# ============================================================================
+
+execution_config:
+  parallel_execution: false  # Run sequentially for deterministic results
+  retry_on_failure: false    # Tests should pass on first run
+  generate_report: true
+  
+  report_format:
+    - "console"  # Human-readable output
+    - "json"     # Machine-readable results
+    - "junit"    # CI/CD integration
+    
+  log_collection:
+    - Collect all audit logs during test execution
+    - Save logs to logs/test_run_<timestamp>.log
+    
+  cleanup:
+    - Reset mock ledger state between tests
+    - Clear transaction history
+    
+  timeout_per_test: 30  # seconds
+
+# ============================================================================
+# Success Metrics
+# ============================================================================
+
+overall_success_criteria:
+  - "All 5 test cases pass"
+  - "No false success scenarios"
+  - "100% rollback success rate in failure tests"
+  - "Complete audit trail in all scenarios"
+  - "Zero sensitive data exposure"
+  - "All tests complete within timeout"

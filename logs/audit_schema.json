@@ -1,0 +1,398 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Transfer Audit Log Schema",
+  "description": "Structured logging schema for mobile banking transfer operations with unique transaction identifiers",
+  "version": "2.0.0",
+  
+  "definitions": {
+    "base_log_entry": {
+      "type": "object",
+      "required": ["timestamp", "level", "event", "transaction_id"],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp in UTC (e.g., 2024-11-26T10:15:22.123Z)"
+        },
+        "level": {
+          "type": "string",
+          "enum": ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+          "description": "Log severity level"
+        },
+        "event": {
+          "type": "string",
+          "description": "Event type identifier"
+        },
+        "transaction_id": {
+          "type": "string",
+          "pattern": "^TXN-[A-Z0-9]{12}$",
+          "description": "Unique transaction identifier (format: TXN-XXXXXXXXXXXX where X is alphanumeric)",
+          "examples": ["TXN-A1B2C3D4E5F6", "TXN-9Z8Y7X6W5V4U"]
+        },
+        "message": {
+          "type": "string",
+          "description": "Human-readable log message"
+        }
+      }
+    },
+    
+    "masked_account": {
+      "type": "string",
+      "pattern": "^\\*{4,}[0-9]{4}$",
+      "description": "Masked account number showing only last 4 digits (e.g., ****1234)",
+      "examples": ["****1234", "****5678"]
+    }
+  },
+  
+  "oneOf": [
+    {
+      "title": "Transfer Initiated Event",
+      "allOf": [
+        {"$ref": "#/definitions/base_log_entry"},
+        {
+          "properties": {
+            "event": {"const": "transfer_initiated"},
+            "source_account": {"$ref": "#/definitions/masked_account"},
+            "destination_account": {"$ref": "#/definitions/masked_account"},
+            "amount": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Transfer amount"
+            },
+            "currency": {
+              "type": "string",
+              "pattern": "^[A-Z]{3}$",
+              "description": "ISO 4217 currency code",
+              "examples": ["USD", "EUR", "GBP"]
+            }
+          },
+          "required": ["source_account", "destination_account", "amount", "currency"]
+        }
+      ],
+      "examples": [
+        {
+          "timestamp": "2024-11-26T10:15:22.123Z",
+          "level": "INFO",
+          "event": "transfer_initiated",
+          "transaction_id": "TXN-A1B2C3D4E5F6",
+          "message": "Transfer initiated",
+          "source_account": "****1234",
+          "destination_account": "****5678",
+          "amount": 100.00,
+          "currency": "USD"
+        }
+      ]
+    },
+    
+    {
+      "title": "State Transition Event",
+      "allOf": [
+        {"$ref": "#/definitions/base_log_entry"},
+        {
+          "properties": {
+            "event": {"const": "state_transition"},
+            "from_state": {
+              "type": "string",
+              "enum": [
+                "initiated", "validating", "pending", 
+                "debit_processing", "debit_completed", 
+                "credit_processing", "completed", 
+                "rolling_back", "failed", "timeout"
+              ],
+              "description": "Previous transfer state"
+            },
+            "to_state": {
+              "type": "string",
+              "enum": [
+                "initiated", "validating", "pending", 
+                "debit_processing", "debit_completed", 
+                "credit_processing", "completed", 
+                "rolling_back", "failed", "timeout"
+              ],
+              "description": "New transfer state"
+            },
+            "reason": {
+              "type": "string",
+              "description": "Reason for state transition"
+            }
+          },
+          "required": ["from_state", "to_state"]
+        }
+      ],
+      "examples": [
+        {
+          "timestamp": "2024-11-26T10:15:23.456Z",
+          "level": "INFO",
+          "event": "state_transition",
+          "transaction_id": "TXN-A1B2C3D4E5F6",
+          "message": "State transition",
+          "from_state": "initiated",
+          "to_state": "validating",
+          "reason": "Starting validation"
+        }
+      ]
+    },
+    
+    {
+      "title": "Ledger Operation Event",
+      "allOf": [
+        {"$ref": "#/definitions/base_log_entry"},
+        {
+          "properties": {
+            "event": {"const": "ledger_operation"},
+            "operation": {
+              "type": "string",
+              "enum": ["debit", "credit", "rollback"],
+              "description": "Type of ledger operation"
+            },
+            "account": {"$ref": "#/definitions/masked_account"},
+            "amount": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Operation amount"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["success", "failed", "timeout", "pending"],
+              "description": "Operation outcome"
+            },
+            "error": {
+              "type": "string",
+              "description": "Error message if status is failed"
+            }
+          },
+          "required": ["operation", "account", "amount", "status"]
+        }
+      ],
+      "examples": [
+        {
+          "timestamp": "2024-11-26T10:15:24.789Z",
+          "level": "INFO",
+          "event": "ledger_operation",
+          "transaction_id": "TXN-A1B2C3D4E5F6",
+          "message": "Ledger operation: debit",
+          "operation": "debit",
+          "account": "****1234",
+          "amount": 100.00,
+          "status": "success"
+        },
+        {
+          "timestamp": "2024-11-26T10:15:26.123Z",
+          "level": "ERROR",
+          "event": "ledger_operation",
+          "transaction_id": "TXN-B2C3D4E5F6G7",
+          "message": "Ledger operation failed: credit",
+          "operation": "credit",
+          "account": "****9999",
+          "amount": 150.00,
+          "status": "failed",
+          "error": "Account closed"
+        }
+      ]
+    },
+    
+    {
+      "title": "Transfer Completed Event",
+      "allOf": [
+        {"$ref": "#/definitions/base_log_entry"},
+        {
+          "properties": {
+            "event": {"const": "transfer_completed"},
+            "duration_ms": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Total transfer duration in milliseconds"
+            }
+          },
+          "required": ["duration_ms"]
+        }
+      ],
+      "examples": [
+        {
+          "timestamp": "2024-11-26T10:15:27.456Z",
+          "level": "INFO",
+          "event": "transfer_completed",
+          "transaction_id": "TXN-A1B2C3D4E5F6",
+          "message": "Transfer completed successfully",
+          "duration_ms": 5333.0
+        }
+      ]
+    },
+    
+    {
+      "title": "Transfer Failed Event",
+      "allOf": [
+        {"$ref": "#/definitions/base_log_entry"},
+        {
+          "properties": {
+            "event": {"const": "transfer_failed"},
+            "error_code": {
+              "type": "string",
+              "enum": [
+                "VALIDATION_ERROR",
+                "INSUFFICIENT_FUNDS",
+                "INVALID_ACCOUNT",
+                "DEBIT_FAILED",
+                "CREDIT_FAILED",
+                "ROLLBACK_FAILED",
+                "TIMEOUT_ERROR",
+                "NETWORK_ERROR",
+                "UNKNOWN_ERROR"
+              ],
+              "description": "Standardized error code"
+            },
+            "error_message": {
+              "type": "string",
+              "description": "Detailed error description"
+            },
+            "current_state": {
+              "type": "string",
+              "description": "Transfer state at time of failure"
+            }
+          },
+          "required": ["error_code", "error_message", "current_state"]
+        }
+      ],
+      "examples": [
+        {
+          "timestamp": "2024-11-26T10:15:28.789Z",
+          "level": "ERROR",
+          "event": "transfer_failed",
+          "transaction_id": "TXN-B2C3D4E5F6G7",
+          "message": "Transfer failed",
+          "error_code": "CREDIT_FAILED",
+          "error_message": "Account closed or invalid",
+          "current_state": "failed"
+        }
+      ]
+    },
+    
+    {
+      "title": "Transfer Rollback Event",
+      "allOf": [
+        {"$ref": "#/definitions/base_log_entry"},
+        {
+          "properties": {
+            "event": {"const": "transfer_rollback"},
+            "reason": {
+              "type": "string",
+              "description": "Reason for rollback"
+            },
+            "status": {
+              "type": "string",
+              "enum": ["success", "failed"],
+              "description": "Rollback operation outcome"
+            }
+          },
+          "required": ["reason", "status"]
+        }
+      ],
+      "examples": [
+        {
+          "timestamp": "2024-11-26T10:15:29.012Z",
+          "level": "WARNING",
+          "event": "transfer_rollback",
+          "transaction_id": "TXN-B2C3D4E5F6G7",
+          "message": "Transfer rollback",
+          "reason": "Credit operation failed after successful debit",
+          "status": "success"
+        }
+      ]
+    }
+  ],
+  
+  "metadata": {
+    "transaction_id_format": {
+      "description": "Unique transaction identifier generation",
+      "format": "TXN-{12_CHAR_HEX}",
+      "generation_method": "TXN- prefix + first 12 characters of UUID4 hexadecimal (uppercase)",
+      "uniqueness": "Guaranteed unique per transfer request",
+      "indexing": "Should be indexed in log aggregation systems for fast lookup",
+      "examples": [
+        "TXN-A1B2C3D4E5F6",
+        "TXN-F8E7D6C5B4A3",
+        "TXN-1234567890AB"
+      ]
+    },
+    
+    "sensitive_data_masking": {
+      "description": "PII protection in audit logs",
+      "rules": [
+        {
+          "field": "account_number",
+          "rule": "Show only last 4 digits, mask rest with asterisks",
+          "example": "1234567890 → ****7890"
+        },
+        {
+          "field": "card_number",
+          "rule": "Show only last 4 digits, mask rest with asterisks",
+          "example": "4532123456789012 → ****9012"
+        },
+        {
+          "field": "pin",
+          "rule": "Never log, completely omit",
+          "example": "N/A"
+        }
+      ]
+    },
+    
+    "log_retention": {
+      "description": "Audit log retention policies",
+      "hot_storage": "30 days (immediate access)",
+      "warm_storage": "1 year (archived, accessible)",
+      "cold_storage": "7 years (compliance requirement)",
+      "purge_after": "7 years"
+    },
+    
+    "query_patterns": {
+      "description": "Common log query patterns",
+      "by_transaction_id": {
+        "query": "transaction_id:TXN-A1B2C3D4E5F6",
+        "use_case": "Trace complete lifecycle of single transfer"
+      },
+      "failed_transfers": {
+        "query": "event:transfer_failed AND timestamp:[now-24h TO now]",
+        "use_case": "Monitor recent transfer failures"
+      },
+      "rollback_operations": {
+        "query": "event:transfer_rollback",
+        "use_case": "Audit rollback frequency and success rate"
+      },
+      "specific_account": {
+        "query": "source_account:****1234 OR destination_account:****1234",
+        "use_case": "Find all transfers for an account (masked)"
+      },
+      "performance_tracking": {
+        "query": "event:transfer_completed AND duration_ms:>5000",
+        "use_case": "Identify slow transfers"
+      }
+    },
+    
+    "integration": {
+      "description": "Log aggregation and monitoring integration",
+      "log_forwarders": [
+        "ELK Stack (Elasticsearch, Logstash, Kibana)",
+        "Splunk",
+        "Datadog",
+        "CloudWatch Logs"
+      ],
+      "alert_conditions": [
+        {
+          "name": "High Failure Rate",
+          "condition": "event:transfer_failed count > 100 in 5 minutes",
+          "severity": "CRITICAL"
+        },
+        {
+          "name": "Rollback Failure",
+          "condition": "event:transfer_rollback AND status:failed",
+          "severity": "CRITICAL"
+        },
+        {
+          "name": "Missing Audit Events",
+          "condition": "transaction_id has transfer_initiated but not transfer_completed within 30 seconds",
+          "severity": "WARNING"
+        }
+      ]
+    }
+  }
+}

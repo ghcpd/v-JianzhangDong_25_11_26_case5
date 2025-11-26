@@ -1,0 +1,238 @@
+{
+  "test_suite": "Transfer Integration Tests",
+  "version": "2.0.0",
+  "timestamp": "2025-11-26T08:28:36.728466",
+  "summary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "duration_ms": 5915.213
+  },
+  "tests": [
+    {
+      "test_id": "TC-001",
+      "test_name": "Normal Success Path - Complete Transfer",
+      "passed": true,
+      "duration_ms": 202.707,
+      "error_message": null,
+      "verifications": [
+        {
+          "condition": "API response status is 'success'",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004499"
+        },
+        {
+          "condition": "Transaction ID present in response",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004557"
+        },
+        {
+          "condition": "Transfer state is COMPLETED (actual: completed)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004584"
+        },
+        {
+          "condition": "Transfer marked as successful",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004595"
+        },
+        {
+          "condition": "Debit completion timestamp exists",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004603"
+        },
+        {
+          "condition": "Credit completion timestamp exists",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004611"
+        },
+        {
+          "condition": "Transfer completion timestamp exists",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004618"
+        },
+        {
+          "condition": "Source account balance is 900.00 (actual: 900.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004645"
+        },
+        {
+          "condition": "Destination account balance is 600.00 (actual: 600.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004654"
+        },
+        {
+          "condition": "Ledger confirms transaction complete",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.004667"
+        }
+      ]
+    },
+    {
+      "test_id": "TC-002",
+      "test_name": "Credit Failure with Automatic Rollback",
+      "passed": true,
+      "duration_ms": 304.769,
+      "error_message": null,
+      "verifications": [
+        {
+          "condition": "API response status is 'failed' (actual: failed)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.311158"
+        },
+        {
+          "condition": "Transfer state is FAILED (actual: failed)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.311167"
+        },
+        {
+          "condition": "Error code is CREDIT_FAILED (actual: TransferErrorCode.CREDIT_FAILED)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.311185"
+        },
+        {
+          "condition": "Rollback state transition occurred",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.311194"
+        },
+        {
+          "condition": "Source balance restored to 1000.00 (actual: 1000.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.311199"
+        },
+        {
+          "condition": "Destination balance unchanged at 500.00 (actual: 500.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:31.311201"
+        }
+      ]
+    },
+    {
+      "test_id": "TC-003",
+      "test_name": "Network Timeout with Retry and Rollback",
+      "passed": true,
+      "duration_ms": 5102.629,
+      "error_message": null,
+      "verifications": [
+        {
+          "condition": "API response status indicates timeout/failure (actual: failed)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.414233"
+        },
+        {
+          "condition": "Transfer state is TIMEOUT or FAILED (actual: failed)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.414264"
+        },
+        {
+          "condition": "Source balance unchanged at 1000.00 (actual: 1000.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.414284"
+        },
+        {
+          "condition": "Destination balance unchanged at 500.00 (actual: 500.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.414293"
+        }
+      ]
+    },
+    {
+      "test_id": "TC-004",
+      "test_name": "Debit Failure - No Rollback Needed",
+      "passed": true,
+      "duration_ms": 102.779,
+      "error_message": null,
+      "verifications": [
+        {
+          "condition": "API response status is 'failed' (actual: failed)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.518525"
+        },
+        {
+          "condition": "Transfer state is FAILED (actual: failed)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.518568"
+        },
+        {
+          "condition": "Error code is DEBIT_FAILED (actual: TransferErrorCode.DEBIT_FAILED)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.518595"
+        },
+        {
+          "condition": "No rollback state transition (debit never succeeded)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.518621"
+        },
+        {
+          "condition": "Source balance unchanged at 100.00 (actual: 100.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.518639"
+        },
+        {
+          "condition": "Destination balance unchanged at 500.00 (actual: 500.0)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.518648"
+        }
+      ]
+    },
+    {
+      "test_id": "TC-005",
+      "test_name": "Complete Audit Trail Verification",
+      "passed": true,
+      "duration_ms": 202.329,
+      "error_message": null,
+      "verifications": [
+        {
+          "condition": "Transaction ID has correct format (TXN-XXXXXXXXXXXX): TXN-3413679B03D2",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722282"
+        },
+        {
+          "condition": "State history exists (6 transitions)",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722297"
+        },
+        {
+          "condition": "VALIDATING state in history",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722318"
+        },
+        {
+          "condition": "PENDING state in history",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722326"
+        },
+        {
+          "condition": "DEBIT_COMPLETED state in history",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722334"
+        },
+        {
+          "condition": "CREDIT_PROCESSING state in history",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722341"
+        },
+        {
+          "condition": "COMPLETED state in history",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722348"
+        },
+        {
+          "condition": "State transition timestamps are sequential",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722379"
+        },
+        {
+          "condition": "Ledger debit reference exists: DR-TXN-3413679B03D2",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722388"
+        },
+        {
+          "condition": "Ledger credit reference exists: CR-TXN-3413679B03D2",
+          "passed": true,
+          "timestamp": "2025-11-26T08:28:36.722396"
+        }
+      ]
+    }
+  ]
+}
