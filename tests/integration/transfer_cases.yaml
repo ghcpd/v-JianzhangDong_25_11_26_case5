@@ -1,0 +1,329 @@
+# Transfer Module Integration Test Scenarios
+
+## Overview
+
+Five comprehensive integration test scenarios that validate the Fixed_Transfer_Flow_v2 implementation.
+Each scenario tests a different aspect of the transfer lifecycle and failure handling.
+
+---
+
+## Scenario 1: Normal Success Flow
+
+**Objective:** Validate that a successful transfer completes with both debit and credit in the ledger.
+
+**Preconditions:**
+- Mock ledger configured for SUCCESS mode
+- Transfer service initialized
+- Callback handler registered
+
+**Steps:**
+1. Initiate transfer: sender="ACC-001", recipient="ACC-002", amount="100.50"
+2. Verify API returns 202 ACCEPTED with correlation_id and status_url
+3. Poll /transfers/{correlation_id} until status changes (or timeout after 5s)
+4. Verify final status is "SUCCESS"
+5. Verify audit log contains:
+   - transfer_initiated
+   - state_transition (INITIATED → PENDING_DEBIT)
+   - ledger_debit_request
+   - ledger_debit_callback
+   - state_transition (PENDING_DEBIT → DEBIT_POSTED)
+   - ledger_credit_request
+   - ledger_credit_callback
+   - state_transition (PENDING_CREDIT → SUCCESS)
+   - transfer_completed
+
+**Expected Outcomes:**
+- Transfer state: SUCCESS
+- Ledger debit call count: 1 (with amount=100.50)
+- Ledger credit call count: 1 (with amount=100.50)
+- Reverse debit calls: 0
+- API response codes: 202 (initiate), 200 (status)
+
+**Pass Criteria:**
+- Final status is "SUCCESS"
+- Both ledger debit and credit were called exactly once
+- Audit log is complete with all expected steps
+- No errors in any operation
+- Duration: < 5 seconds
+
+---
+
+## Scenario 2: Posting Failure (Insufficient Funds)
+
+**Objective:** Validate that debit failure is correctly reported and prevents credit.
+
+**Preconditions:**
+- Mock ledger configured for FAIL mode (returns insufficient funds)
+- Transfer service initialized
+
+**Steps:**
+1. Initiate transfer: sender="ACC-001", recipient="ACC-002", amount="1000000.00"
+2. Verify API returns 202 ACCEPTED
+3. Poll /transfers/{correlation_id} until status changes
+4. Verify final status is "FAILED"
+5. Verify error_reason contains "insufficient" or similar
+6. Verify audit log shows:
+   - ledger_debit_request
+   - ledger_debit_callback with FAILED status
+   - NO ledger_credit_request (never reached)
+   - NO reverse debit (debit never posted)
+
+**Expected Outcomes:**
+- Transfer state: FAILED
+- Ledger debit call count: 1
+- Ledger credit call count: 0 (prevented due to debit failure)
+- Reverse debit calls: 0
+- Error reason: "Debit failed: Insufficient funds" or similar
+
+**Pass Criteria:**
+- Final status is "FAILED"
+- error_reason is populated
+- Credit was never attempted
+- No reverse debit occurred
+- Audit trail shows debit rejection
+
+---
+
+## Scenario 3: Network Retry (Timeout → Success)
+
+**Objective:** Validate that network timeouts are handled gracefully.
+
+**Preconditions:**
+- Mock ledger configured for CALLBACK_DELAYED mode
+- Ledger callback is delayed beyond worker's first wait attempt
+- Transfer service timeout set to 1 second for testing
+
+**Steps:**
+1. Initiate transfer: sender="ACC-001", recipient="ACC-002", amount="50.25"
+2. Verify API returns 202 ACCEPTED
+3. Poll /transfers/{correlation_id} - should eventually reach SUCCESS despite initial delay
+4. Verify final status is "SUCCESS"
+5. Verify audit log shows callback eventually received
+
+**Expected Outcomes:**
+- Transfer state: SUCCESS (after callback arrives)
+- Ledger debit and credit both posted
+- Audit log includes delayed callback
+
+**Pass Criteria:**
+- Final status is "SUCCESS"
+- Both ledger debit and credit succeeded despite callback delay
+- System recovered gracefully
+
+---
+
+## Scenario 4: Timeout Rollback (Credit Fails, Reverse Debit)
+
+**Objective:** Validate that compensating transactions are triggered when credit fails after debit succeeds.
+
+**Preconditions:**
+- Mock ledger configured to succeed on debit, but fail on credit
+- Transfer service initialized
+
+**Steps:**
+1. Configure ledger: debit→SUCCESS, credit→FAIL (e.g., "Recipient account not found")
+2. Initiate transfer: sender="ACC-001", recipient="ACC-INVALID", amount="75.00"
+3. Verify API returns 202 ACCEPTED
+4. Poll /transfers/{correlation_id} until status changes
+5. Verify final status is "FAILED"
+6. Verify error_reason indicates credit failure
+7. Verify reverse_txn_id is populated
+8. Verify audit log shows:
+   - ledger_debit_callback (SUCCESS)
+   - ledger_credit_request
+   - ledger_credit_callback (FAILED)
+   - reverse_debit_initiated
+   - reverse_debit_callback (SUCCESS)
+   - state_transition to FAILED
+
+**Expected Outcomes:**
+- Transfer state: FAILED
+- Ledger debit call count: 1 (succeeded)
+- Ledger credit call count: 1 (failed)
+- Reverse debit call count: 1 (compensation)
+- reverse_txn_id: populated
+- Sender's account is refunded (via reverse debit)
+
+**Pass Criteria:**
+- Final status is "FAILED" (not SUCCESS)
+- Reverse debit was automatically initiated
+- Audit log shows complete failure recovery flow
+- reverse_txn_id is present
+
+---
+
+## Scenario 5: Audit Reconciliation
+
+**Objective:** Validate that audit logs enable complete reconciliation and investigation.
+
+**Preconditions:**
+- Any of the above scenarios have completed
+- Audit logs are written to storage
+
+**Steps:**
+1. Run Scenario 1 (Normal Success Flow) to completion
+2. Query audit logs by correlation_id
+3. Verify all expected audit entries are present with:
+   - Correct correlation_id
+   - Proper timestamp ordering
+   - All required detail fields
+   - Ledger transaction IDs linking backend state to ledger operations
+4. Reconstruct the complete transfer timeline from logs
+5. Verify no sensitive data (e.g., full account numbers) is exposed in logs
+
+**Expected Outcomes:**
+- Audit log entry count: ≥ 8 (transfer_initiated, multiple state transitions, callbacks, etc.)
+- Each entry has:
+  - correlation_id matching the transfer
+  - timestamp in ISO 8601 format
+  - step identifying the operation
+  - actor identifying the component
+  - details with transfer_id and ledger_txn_id (if applicable)
+  - result (success/failure)
+- Complete timeline can be reconstructed
+- No sensitive data in any audit log
+
+**Pass Criteria:**
+- All expected audit entries present
+- Timeline is coherent and chronologically ordered
+- Ledger transaction IDs link backend operations to ledger
+- No sensitive data exposed
+- Timestamps are consistent and precise
+
+---
+
+## Test Configuration
+
+### Common Test Setup
+```yaml
+timeout_seconds: 30  # Max wait for transfer completion
+polling_interval_ms: 100  # How often to poll for status
+ledger_callback_delay_ms: 50  # Simulate network latency
+```
+
+### Mock Ledger Modes
+- **SUCCESS**: All operations succeed immediately
+- **FAIL**: Operations return failure (insufficient funds, invalid account, etc.)
+- **TIMEOUT**: Operations timeout (no callback sent)
+- **NO_CALLBACK**: Request succeeds but callback is never sent (network partition)
+- **CALLBACK_DELAYED**: Callback is sent but after timeout threshold
+- **IDEMPOTENCY_MISMATCH**: Idempotency key returns different result on retry
+
+### Assertions by Scenario
+
+#### Scenario 1 (Normal Success)
+```python
+assert transfer.state == TransferState.SUCCESS
+assert len(ledger.debit_calls) == 1
+assert len(ledger.credit_calls) == 1
+assert len(ledger.reverse_calls) == 0
+assert transfer.ledger_debit_txn_id is not None
+assert transfer.ledger_credit_txn_id is not None
+assert transfer.error_reason is None
+assert len(audit_logs) >= 8
+```
+
+#### Scenario 2 (Posting Failure)
+```python
+assert transfer.state == TransferState.FAILED
+assert len(ledger.debit_calls) == 1
+assert len(ledger.credit_calls) == 0  # Never reached
+assert len(ledger.reverse_calls) == 0
+assert transfer.error_reason is not None
+assert 'insufficient' in transfer.error_reason.lower() or 'failed' in transfer.error_reason.lower()
+```
+
+#### Scenario 3 (Network Retry)
+```python
+assert transfer.state == TransferState.SUCCESS
+assert len(ledger.debit_calls) == 1
+assert len(ledger.credit_calls) == 1
+assert len(ledger.reverse_calls) == 0
+# Verify callback eventually received (check audit log for callback step)
+callback_log = next(log for log in audit_logs if 'callback' in log['step'])
+assert callback_log is not None
+```
+
+#### Scenario 4 (Timeout Rollback)
+```python
+assert transfer.state == TransferState.FAILED
+assert len(ledger.debit_calls) == 1
+assert len(ledger.credit_calls) == 1
+assert len(ledger.reverse_calls) == 1  # Compensation
+assert transfer.reverse_txn_id is not None
+assert transfer.error_reason is not None
+assert 'credit' in transfer.error_reason.lower() or 'failed' in transfer.error_reason.lower()
+```
+
+#### Scenario 5 (Audit Reconciliation)
+```python
+assert len(audit_logs) >= 8
+assert all(log['correlation_id'] == expected_correlation_id for log in audit_logs)
+assert all('timestamp' in log for log in audit_logs)
+assert any(log['step'] == 'transfer_initiated' for log in audit_logs)
+assert any(log['step'] == 'ledger_debit_callback' for log in audit_logs)
+assert any(log['step'] == 'ledger_credit_callback' for log in audit_logs)
+assert not any(contains_sensitive_data(log) for log in audit_logs)
+```
+
+---
+
+## Test Reporting
+
+Each test run produces:
+
+1. **Summary Report**
+   ```
+   ========== TRANSFER MODULE TEST SUITE ==========
+   
+   Scenario 1: Normal Success Flow ................ PASS
+   Scenario 2: Posting Failure ................... PASS
+   Scenario 3: Network Retry ..................... PASS
+   Scenario 4: Timeout Rollback .................. PASS
+   Scenario 5: Audit Reconciliation .............. PASS
+   
+   ======= RESULTS =======
+   Total Scenarios: 5
+   Passed: 5
+   Failed: 0
+   Duration: 12.34s
+   
+   ======= METRICS =======
+   Total API Calls: 15
+   Total Ledger Calls: 13
+   Audit Log Entries: 87
+   Network Partitions Simulated: 1
+   Timeouts Detected: 0
+   Compensation Transactions: 1
+   ```
+
+2. **Detailed Report** (per scenario)
+   ```
+   Scenario 1: Normal Success Flow
+   ├─ API: POST /transfers ........................ 202 ACCEPTED
+   ├─ Transfer State: INITIATED → PENDING_DEBIT → DEBIT_POSTED → PENDING_CREDIT → SUCCESS
+   ├─ Ledger Calls:
+   │  ├─ Debit: 1 call, amount=100.50, ledger_txn_id=LEDGER-ABC123
+   │  └─ Credit: 1 call, amount=100.50, ledger_txn_id=LEDGER-ABC124
+   ├─ Audit Logs: 8 entries
+   ├─ Duration: 0.45s
+   └─ Status: PASS
+   ```
+
+3. **Metrics Report**
+   ```
+   ===== PERFORMANCE METRICS =====
+   Scenario 1 Duration: 0.45s
+   Scenario 2 Duration: 0.32s
+   Scenario 3 Duration: 1.20s (delayed callback)
+   Scenario 4 Duration: 0.51s
+   Scenario 5 Duration: 0.41s
+   
+   Total Ledger Requests: 13
+   - Debit: 5 requests
+   - Credit: 5 requests
+   - Reverse: 1 request
+   
+   Callback Success Rate: 100%
+   Audit Completion Rate: 100%
+   ```

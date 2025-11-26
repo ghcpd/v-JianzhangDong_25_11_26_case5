@@ -1,0 +1,294 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Transfer Audit Log Entry Schema",
+  "description": "Structured logging schema for mobile banking transfer module audit trail. Enables reconciliation and investigation without exposing sensitive data.",
+  "type": "object",
+  "required": [
+    "correlation_id",
+    "timestamp",
+    "step",
+    "actor",
+    "result"
+  ],
+  "properties": {
+    "correlation_id": {
+      "type": "string",
+      "pattern": "^TXN-[0-9]{4}-[0-9]{3}-[A-Z0-9]{6}$",
+      "description": "Unique transaction identifier generated per API request. Format: TXN-YYYY-DDD-XXXXXX. Example: TXN-2025-330-ABC123. Used to trace entire lifecycle: frontend request → backend processing → ledger interaction → resolution."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp with microsecond precision. Example: 2025-11-26T10:15:30.123456Z"
+    },
+    "step": {
+      "type": "string",
+      "enum": [
+        "transfer_initiated",
+        "state_transition",
+        "ledger_debit_request",
+        "ledger_debit_callback",
+        "ledger_credit_request",
+        "ledger_credit_callback",
+        "reverse_debit_initiated",
+        "reverse_debit_callback",
+        "callback_handler_invoked",
+        "reconciliation_check",
+        "timeout_detected",
+        "transfer_completed"
+      ],
+      "description": "Step in the transfer lifecycle. Each step is a discrete event logged independently."
+    },
+    "actor": {
+      "type": "string",
+      "enum": [
+        "api_controller",
+        "transfer_worker",
+        "ledger_service",
+        "callback_handler",
+        "reconciliation_job",
+        "reverse_debit_worker"
+      ],
+      "description": "System component that triggered this log entry."
+    },
+    "details": {
+      "type": "object",
+      "description": "Step-specific context; structure varies by step type.",
+      "properties": {
+        "transfer_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Internal UUID of the Transfer record. Example: 550e8400-e29b-41d4-a716-446655440000"
+        },
+        "ledger_txn_id": {
+          "type": "string",
+          "pattern": "^LEDGER-[0-9]+$",
+          "description": "Transaction ID returned by the core ledger service. Example: LEDGER-456789. Used to reconcile with ledger audit logs."
+        },
+        "amount": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]{2}$",
+          "description": "Transfer amount in major currency units (e.g., USD). Example: 100.50. Stored as string to preserve precision."
+        },
+        "currency": {
+          "type": "string",
+          "pattern": "^[A-Z]{3}$",
+          "description": "ISO 4217 currency code. Example: USD, EUR, GBP"
+        },
+        "state_from": {
+          "type": "string",
+          "enum": [
+            "INITIATED",
+            "PENDING_DEBIT",
+            "DEBIT_POSTED",
+            "PENDING_CREDIT",
+            "SUCCESS",
+            "FAILED",
+            "ROLLEDBACK"
+          ],
+          "description": "Previous state (only present in state_transition steps)."
+        },
+        "state_to": {
+          "type": "string",
+          "enum": [
+            "INITIATED",
+            "PENDING_DEBIT",
+            "DEBIT_POSTED",
+            "PENDING_CREDIT",
+            "SUCCESS",
+            "FAILED",
+            "ROLLEDBACK"
+          ],
+          "description": "New state (only present in state_transition steps)."
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable reason for state transition or decision. Example: 'Normal flow', 'Ledger returned insufficient funds', 'Callback timeout exceeded'"
+        },
+        "operation_type": {
+          "type": "string",
+          "enum": [
+            "debit",
+            "credit",
+            "reverse_debit"
+          ],
+          "description": "Type of ledger operation (only in ledger_*_request/callback steps)."
+        },
+        "ledger_status": {
+          "type": "string",
+          "enum": [
+            "PENDING",
+            "SUCCESS",
+            "FAILED",
+            "TIMEOUT",
+            "UNKNOWN"
+          ],
+          "description": "Status returned by ledger service."
+        },
+        "retry_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of retry attempts for this operation. 0 = first attempt."
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Duration of operation in milliseconds."
+        },
+        "reverse_txn_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "ID of reverse transaction (if compensation was initiated). Example: 550e8400-e29b-41d4-a716-446655440001"
+        },
+        "error_code": {
+          "type": "string",
+          "description": "Machine-readable error code if operation failed. Example: INSUFFICIENT_FUNDS, NETWORK_TIMEOUT, INVALID_ACCOUNT"
+        },
+        "error_message": {
+          "type": "string",
+          "description": "Error message (no sensitive data). Example: 'Sender account has insufficient balance'"
+        }
+      },
+      "additionalProperties": true
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "success",
+        "failure",
+        "timeout",
+        "pending"
+      ],
+      "description": "Outcome of the operation recorded in this log entry."
+    },
+    "error": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Optional error trace or stack trace (for debugging; null if no error)."
+    }
+  },
+  "examples": [
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:30.123456Z",
+      "step": "transfer_initiated",
+      "actor": "api_controller",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "amount": "100.50",
+        "currency": "USD"
+      },
+      "result": "success"
+    },
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:30.234567Z",
+      "step": "state_transition",
+      "actor": "api_controller",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "state_from": "INITIATED",
+        "state_to": "PENDING_DEBIT",
+        "reason": "Transfer queued for processing"
+      },
+      "result": "success"
+    },
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:31.345678Z",
+      "step": "ledger_debit_request",
+      "actor": "transfer_worker",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "operation_type": "debit",
+        "amount": "100.50",
+        "currency": "USD",
+        "retry_count": 0,
+        "duration_ms": 150
+      },
+      "result": "pending"
+    },
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:32.456789Z",
+      "step": "ledger_debit_callback",
+      "actor": "callback_handler",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "ledger_txn_id": "LEDGER-456789",
+        "operation_type": "debit",
+        "ledger_status": "SUCCESS",
+        "amount": "100.50"
+      },
+      "result": "success"
+    },
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:32.567890Z",
+      "step": "state_transition",
+      "actor": "callback_handler",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "state_from": "PENDING_DEBIT",
+        "state_to": "DEBIT_POSTED",
+        "reason": "Ledger debit callback received successfully"
+      },
+      "result": "success"
+    },
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:33.678901Z",
+      "step": "ledger_credit_callback",
+      "actor": "callback_handler",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "ledger_txn_id": "LEDGER-456790",
+        "operation_type": "credit",
+        "ledger_status": "FAILED",
+        "error_code": "INVALID_ACCOUNT",
+        "error_message": "Recipient account does not exist"
+      },
+      "result": "failure"
+    },
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:33.789012Z",
+      "step": "reverse_debit_initiated",
+      "actor": "transfer_worker",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "reverse_txn_id": "550e8400-e29b-41d4-a716-446655440001",
+        "amount": "100.50",
+        "reason": "Credit operation failed; compensating debit initiated"
+      },
+      "result": "success"
+    },
+    {
+      "correlation_id": "TXN-2025-330-ABC123",
+      "timestamp": "2025-11-26T10:15:35.890123Z",
+      "step": "transfer_completed",
+      "actor": "transfer_worker",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440000",
+        "state_to": "FAILED",
+        "reason": "Credit failed; reverse debit applied",
+        "reverse_txn_id": "550e8400-e29b-41d4-a716-446655440001"
+      },
+      "result": "failure"
+    },
+    {
+      "correlation_id": "TXN-2025-331-DEF456",
+      "timestamp": "2025-11-26T11:00:00.000000Z",
+      "step": "reconciliation_check",
+      "actor": "reconciliation_job",
+      "details": {
+        "transfer_id": "550e8400-e29b-41d4-a716-446655440002",
+        "state_from": "PENDING_DEBIT",
+        "reason": "Orphaned transfer detected; age 35 minutes"
+      },
+      "result": "pending"
+    }
+  ]
+}
