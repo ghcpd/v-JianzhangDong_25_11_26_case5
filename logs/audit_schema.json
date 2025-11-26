@@ -1,0 +1,20 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Transfer Audit Log Schema",
+  "type": "object",
+  "properties": {
+    "timestamp": {"type": "string", "format": "date-time"},
+    "tx_id": {"type": "string"},
+    "event": {"type": "string"},
+    "from": {"type": "string", "description": "Masked from account, e.g. A***"},
+    "to": {"type": "string", "description": "Masked to account"},
+    "amount": {"type": "number"},
+    "state": {"type": "string"},
+    "error": {"type": ["null", "string"]},
+    "meta": {"type": ["null", "object"], "description": "Non-sensitive metadata"}
+  },
+  "required": ["timestamp","tx_id","event","state"]
+}
+
+// Example line
+// {"timestamp":"2025-11-26T12:00:00Z","tx_id":"b42a1d...","event":"transfer.succeeded","from":"A***","to":"B***","amount":100.0,"state":"succeeded"}
