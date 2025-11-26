@@ -1,0 +1,89 @@
+# Integration testing scenarios for Fixed_Transfer_Flow_v2
+
+cases:
+  - name: normal_success
+    tx_id: normal-001
+    initial_balances:
+      A: 100
+      B: 50
+    from: A
+    to: B
+    amount: 30
+    behaviors: {}
+    expected:
+      status: success
+      ledger:
+        from: 70
+        to: 80
+
+  - name: posting_credit_permanent_failure
+    tx_id: perm-001
+    initial_balances:
+      A: 100
+      B: 50
+    from: A
+    to: B
+    amount: 40
+    behaviors:
+      credit:
+        perm-001: permanent_failure
+    expected:
+      status: failed
+      ledger:
+        from: 100
+        to: 50
+
+  - name: transient_retry_then_success
+    tx_id: retry-001
+    initial_balances:
+      A: 200
+      B: 0
+    from: A
+    to: B
+    amount: 10
+    behaviors:
+      credit:
+        # first attempt transient, second success
+        retry-001: [transient_failure, success]
+    expected:
+      status: success
+      ledger:
+        from: 190
+        to: 10
+
+  - name: timeout_retry_and_rollback
+    tx_id: timeout-001
+    initial_balances:
+      A: 150
+      B: 20
+    from: A
+    to: B
+    amount: 50
+    behaviors:
+      credit:
+        # all transient failures
+        timeout-001: [transient_failure, transient_failure, transient_failure]
+    expected:
+      status: failed
+      ledger:
+        # debit should be rolled back after retries exhausted
+        from: 150
+        to: 20
+
+  - name: audit_verification_success_committed
+    tx_id: audit-001
+    initial_balances:
+      A: 80
+      B: 5
+    from: A
+    to: B
+    amount: 5
+    behaviors: {}
+    expected:
+      status: success
+      ledger:
+        from: 75
+        to: 10
+    audit_asserts:
+      - transfer.debit_committed
+      - transfer.credit_committed

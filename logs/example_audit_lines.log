@@ -1,0 +1,3 @@
+{"timestamp":"2025-11-26T12:00:00Z","tx_id":"normal-001","event":"transfer.initiated","phase":"init","amount":30}
+{"timestamp":"2025-11-26T12:00:01Z","tx_id":"normal-001","event":"transfer.debit_committed","phase":"debit","account":"sha256:abcd..","amount":30}
+{"timestamp":"2025-11-26T12:00:02Z","tx_id":"normal-001","event":"transfer.credit_committed","phase":"credit","account":"sha256:efgh..","amount":30}
