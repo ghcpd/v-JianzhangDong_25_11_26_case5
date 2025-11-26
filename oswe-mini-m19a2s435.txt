@@ -1,0 +1,77 @@
+GitHub Copilot — the results are in the terminal output by default; nothing is persisted to a file automatically. Here’s exactly where the results live and how to persist them.
+
+## 📍 Where are the results now (runtime)
+- Console (PowerShell): the test harness printed per-case results and summary:
+  - run_suite output: Example lines
+    - Running: normal_success — Result: PASS state= succeeded balances= {'A': 900, 'B': 200}
+    - Summary: 5/5 passed
+  - pytest output:
+    - 1 passed in 7.78s
+- In-memory audit logs (per run):
+  - `TransferService.audit_log` contains a list of events for the run (init, succeeded, failed, rolled_back) — not persisted by default.
+- Files in the repo to review:
+  - transfer_cases.yaml (tests)
+  - audit_schema.json (audit schema)
+  - run_suite.py (harness script prints case results and returns a results list)
+  - test_transfer_flow.py (pytest wrapper)
+
+---
+
+## 💾 How to save and fetch results (commands)
+
+1) Save the harness console output to a text file (PowerShell):
+   - From repo root (Windows PowerShell):
+     ```powershell
+     $env:PYTHONPATH = Get-Location
+     .\.venv\Scripts\python.exe -m tests.run_suite 2>&1 | Tee-Object -FilePath .\test_output.txt
+     ```
+   - The full console log will be in `.\test_output.txt`.
+
+2) Save pytest results as JUnit XML (for CI):
+   ```powershell
+   $env:PYTHONPATH = Get-Location
+   .\.venv\Scripts\python.exe -m pytest --junitxml=results.xml -q
+   ```
+   - `results.xml` will contain test summary and each test case result.
+
+3) Save the full harness return results (JSON) including `audit_log`:
+   - Quick one-liner to capture JSON results:
+     ```powershell
+     $env:PYTHONPATH = Get-Location
+     .\.venv\Scripts\python.exe -c "import os, json; from tests.run_suite import run_suite; r=run_suite(os.path.join(os.getcwd(),'tests','integration','transfer_cases.yaml')); open('results.json','w', encoding='utf-8').write(json.dumps(r, indent=2))"
+     ```
+   - Output will be written to `results.json` (includes `audit_log` per case).
+
+4) Capture any debug output (trace-level):
+   - Add or temporarily enable debug logs:
+     - Add at top of run_suite.py:
+       ```python
+       import logging
+       logging.basicConfig(level=logging.DEBUG)
+       ```
+     - Or set logging from PowerShell script that sets `PYTHONPATH` and runs the harness.
+
+---
+
+## 🔍 Where to view/validate results
+- Harness summary and per-case pass/fail printed to console or in `test_output.txt`.
+- For audit verification check:
+  - Open `results.json` and inspect `audit_log` fields for:
+    - `tx_id` (unique identifier)
+    - `event` (transfer.initiated, transfer.succeeded, etc.)
+    - `from`, `to` — masked per audit schema (always contains `***`)
+- JUnit XML (`results.xml`) for CI systems or integrations.
+
+---
+
+## ✨ Final status (from the run I executed)
+- Harness (`tests.run_suite`) summary: 5/5 passed (all five test cases).
+- `pytest` (wrapper): 1 passed (the test wrapper verifies the harness and therefore the five cases indirectly).
+- I confirmed and fixed the one failing item (off-by-one retry) and audit masking before final run.
+
+---
+
+If you want, I can:
+- Add a `--output-file` option to run_suite.py so it writes `results.json` automatically.
+- Make the harness write audit logs to a central logs JSON file every run.
+- Add a JUnit output by default or a CI workflow to store `results.xml`.

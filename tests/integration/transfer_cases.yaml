@@ -1,0 +1,83 @@
+---
+- id: normal_success
+  description: "Normal transfer succeeds without errors"
+  initial_balances:
+    A: 1000
+    B: 100
+  from: A
+  to: B
+  amount: 100
+  behavior: {}
+  expected:
+    final_state: succeeded
+    balances:
+      A: 900
+      B: 200
+
+- id: posting_failure_then_retry_success
+  description: "Debit fails once then success on retry"
+  initial_balances:
+    A: 1000
+    B: 100
+  from: A
+  to: B
+  amount: 50
+  behavior:
+    # For debit: first attempt false, second true
+    debit: [false, true]
+  expected:
+    final_state: succeeded
+    balances:
+      A: 950
+      B: 150
+
+- id: network_retry_exhausted
+  description: "Ledger always fails and retries are exhausted, system rolls back"
+  initial_balances:
+    A: 100
+    B: 0
+  from: A
+  to: B
+  amount: 60
+  behavior:
+    debit: [false, false, false, false]
+  expected:
+    final_state: failed
+    balances:
+      A: 100
+      B: 0
+
+- id: timeout_rollback
+  description: "Credit operation times out, system rolls back debit"
+  initial_balances:
+    A: 1000
+    B: 0
+  from: A
+  to: B
+  amount: 500
+  behavior:
+    debit: [true]
+    # Make sure credit fails for all attempts (max_retries 3)
+    credit: [false, false, false]
+  expected:
+    final_state: rolled_back
+    balances:
+      A: 1000
+      B: 0
+
+- id: audit_verification
+  description: "Transaction audit details including tx id, outcome and no sensitive data"
+  initial_balances:
+    A: 700
+    B: 100
+  from: A
+  to: B
+  amount: 100
+  behavior:
+    debit: [true]
+    credit: [true]
+  expected:
+    final_state: succeeded
+    balances:
+      A: 600
+      B: 200
